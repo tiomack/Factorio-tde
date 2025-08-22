@@ -24,9 +24,15 @@ function create_tde_info_gui(player)
     
 end
   
-function update_tde_info_gui(player) -- Updating GUI
-    local frame = player.gui.left.tde_info_frame
+function update_tde_info_gui(player)
+if not player or not player.valid then return end
+
+local frame = player.gui.left.tde_info_frame
+if not frame then
+    create_tde_info_gui(player)
+    frame = player.gui.left.tde_info_frame
     if not frame then return end
+end
   
     -- Wave countdown logic (your original)
     local _, next_wave_tick = tde_calculate_wave_state()
