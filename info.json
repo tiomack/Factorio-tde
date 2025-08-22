@@ -1,0 +1,15 @@
+{
+  "name": "tower-defense-evolution",
+  "version": "5.2.0",
+  "title": "Tower Defense Evolution - Pure Kill system",
+  "author": "i.am.mack & TCentral", 
+  "contact": "manuel_mackenney discord",
+  "homepage": "",
+  "description": "Pure tower defense: progress by killing biters, dense nest placement, periodic waves with bosses, Master Ammo Chest system. Now with full multiplayer support and Space Age DLC integration! No pollution attacks, only evolution.",
+  "factorio_version": "2.0",
+  "dependencies": [
+    "base >= 2.0.0",
+    "? space-age",
+    "? space-is-fake"
+  ]
+}

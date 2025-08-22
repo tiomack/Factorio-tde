@@ -1,0 +1,56 @@
+-- Create the countdown label for a player (e.g., when they join or mod initializes)
+function create_tde_info_gui(player)
+
+    if player.gui.left.tde_info_frame then
+      player.gui.left.tde_info_frame.destroy()
+    end
+  
+    local frame = player.gui.left.add{
+      type = "frame",
+      name = "tde_info_frame",
+      caption = "⚔ TDE Status",
+      direction = "vertical"
+    }
+  
+    frame.style.font = "default-bold"
+    frame.style.minimal_width = 200
+  
+    frame.add{type = "label", name = "wave_timer_label", caption = "Next wave in: 60s"}
+    frame.add{type = "label", name = "current_wave_label", caption = "Current wave: 1"}
+    frame.add{type = "label", name = "next_boss_label", caption = string.format("Next boss in: %d waves", 10)}
+    frame.add{type = "label", name = "kill_count_label", caption = "Kills: 0"}
+    frame.add{type = "label", name = "boss_kill_count_label", caption = "Boss kills: 0"}
+    frame.add{type = "label", name = "research_count_label", caption = "Research: 0"}
+    
+end
+  
+function update_tde_info_gui(player) -- Updating GUI
+    local frame = player.gui.left.tde_info_frame
+    if not frame then return end
+  
+    -- Wave countdown logic (your original)
+    local _, next_wave_tick = tde_calculate_wave_state()
+    local remaining = next_wave_tick - game.tick
+    local minutes = math.floor(remaining / 3600)
+    local seconds = math.floor((remaining % 3600) / 60)
+    local countdown = (remaining > 0)
+      and string.format("Next wave in: %02d:%02d", minutes, seconds)
+      or "⚠️ Wave arriving!"
+  
+    local waves_since_last_boss = storage.tde.wave_count % storage.tde.BOSS_EVERY
+    local waves_until_next_boss = storage.tde.BOSS_EVERY - waves_since_last_boss
+    if waves_until_next_boss == storage.tde.BOSS_EVERY then
+      waves_until_next_boss = 0 -- We're on a boss wave
+      frame.next_boss_label.caption = string.format("Next boss in: ⚠️ BOSS WAVE ⚠️")
+    else
+      frame.next_boss_label.caption = string.format("Next boss in: %d waves", waves_until_next_boss)
+    end
+  
+    -- Update GUI labels
+    frame.wave_timer_label.caption = countdown
+    frame.current_wave_label.caption = "Current wave: " .. tostring(storage.tde.wave_count or 0)
+    frame.kill_count_label.caption = "Kills: " .. tostring(storage.tde.total_kills or 0)
+    frame.boss_kill_count_label.caption = "Boss kills: " .. tostring(storage.tde.total_boss_kills or 0)
+    frame.research_count_label.caption = "Research: " .. tostring(storage.tde.research_count or 0)
+end
+  
