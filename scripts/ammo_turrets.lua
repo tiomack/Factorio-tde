@@ -11,7 +11,10 @@ function register_master_ammo_chest(chest)
       -- regardless of who placed them (multiplayer-friendly)
     }
     
-    game.print("Master Ammo Chest registered for global distribution!", {r = 0, g = 1, b = 0})
+    -- FIXED: Check setting before showing messages
+    if settings.global["tde-show-ammo-messages"].value then
+      game.print("Master Ammo Chest registered for global distribution!", {r = 0, g = 1, b = 0})
+    end
     log("Registered Master Ammo Chest at " .. chest.position.x .. "," .. chest.position.y)
 end
   
@@ -38,7 +41,11 @@ function register_turret(turret)
         -- regardless of who placed them (multiplayer-friendly)
       }
       log("Registered turret " .. turret.name .. " at " .. turret.position.x .. "," .. turret.position.y .. " (needs " .. ammo_type .. ")")
-      game.print("Turret registered: " .. turret.name .. " (needs " .. ammo_type .. ")", {r = 0, g = 1, b = 0.5})
+      
+      -- FIXED: Check setting before showing messages
+      if settings.global["tde-show-ammo-messages"].value then
+        game.print("Turret registered: " .. turret.name .. " (needs " .. ammo_type .. ")", {r = 0, g = 1, b = 0.5})
+      end
     else
       log("Turret " .. turret.name .. " doesn't need ammo - not registered")
     end
@@ -66,7 +73,7 @@ function get_turret_ammo_type(turret)
     return nil
 end
   
--- CORREGIDO: Sistema de distribución de munición SIMPLIFICADO - Volver a lógica que funcionaba
+-- FIXED: Completely rewritten ammo distribution system to prevent ammo loss
 function process_ammo_distribution()
     if game.tick % 180 ~= 0 then return end -- Every 3 seconds
     
@@ -74,68 +81,184 @@ function process_ammo_distribution()
       return
     end
     
-    -- Limpiar torretas inválidas primero
+    -- STEP 1: Clean up invalid entities first
     local valid_turret_count = 0
+    local valid_turrets = {}
+    
     for turret_id, turret_data in pairs(storage.tde.global_turrets) do
       if turret_data.entity and turret_data.entity.valid and turret_data.ammo_type then
         valid_turret_count = valid_turret_count + 1
+        table.insert(valid_turrets, turret_data)
       else
         storage.tde.global_turrets[turret_id] = nil
       end
     end
     
-    -- Si no hay torretas válidas, no hacer nada (no tocar cofres)
-    if valid_turret_count == 0 then
-      -- Debug cada minuto
-      if game.tick % 3600 == 0 then
-        log("MAC System: No valid turrets found, skipping ammo collection")
+    -- STEP 2: Clean up invalid chests
+    local valid_chests = {}
+    local chest_count = 0
+    
+    for chest_id, chest_data in pairs(storage.tde.master_ammo_chests) do
+      if chest_data.entity and chest_data.entity.valid then
+        chest_count = chest_count + 1
+        table.insert(valid_chests, chest_data)
+      else
+        storage.tde.master_ammo_chests[chest_id] = nil
+      end
+    end
+    
+    -- If no valid components, exit early
+    if valid_turret_count == 0 or chest_count == 0 then
+      if game.tick % 3600 == 0 then -- Debug every minute
+        log("MAC System: " .. chest_count .. " chests, " .. valid_turret_count .. " turrets found - skipping distribution")
       end
       return
     end
     
-    local total_ammo = {}
-    local chest_count = 0
+    -- STEP 3: Collect available ammo from chests WITHOUT removing it yet
+    local available_ammo = {}
     
-    -- Recoger munición de Master Ammo Chests (solo si hay torretas válidas)
-    for chest_id, chest_data in pairs(storage.tde.master_ammo_chests) do
-      if chest_data.entity and chest_data.entity.valid then
-        chest_count = chest_count + 1
-        local inventory = chest_data.entity.get_inventory(defines.inventory.chest)
+    for _, chest_data in pairs(valid_chests) do
+      local inventory = chest_data.entity.get_inventory(defines.inventory.chest)
+      if inventory then
+        for i = 1, #inventory do
+          local stack = inventory[i]
+          if stack.valid_for_read and is_ammunition(stack.name) then
+            available_ammo[stack.name] = (available_ammo[stack.name] or 0) + stack.count
+          end
+        end
+      end
+    end
+    
+    -- STEP 4: Calculate turret needs without taking ammo yet
+    local turret_needs = {}
+    local total_needs = {}
+    
+    for _, turret_data in pairs(valid_turrets) do
+      local inventory = turret_data.entity.get_inventory(defines.inventory.turret_ammo)
+      if inventory then
+        local current_ammo = 0
+        for i = 1, #inventory do
+          local stack = inventory[i]
+          if stack.valid_for_read and stack.name == turret_data.ammo_type then
+            current_ammo = current_ammo + stack.count
+          end
+        end
         
-        if inventory then
-          for i = 1, #inventory do
-            local stack = inventory[i]
-            if stack.valid_for_read and is_ammunition(stack.name) then
-              total_ammo[stack.name] = (total_ammo[stack.name] or 0) + stack.count
-              stack.clear()
+        -- Each turret wants at least 50 ammo, up to 200 max
+        local desired_ammo = 50
+        local max_ammo = 200
+        local need = math.max(0, math.min(desired_ammo - current_ammo, max_ammo - current_ammo))
+        
+        if need > 0 then
+          table.insert(turret_needs, {
+            turret_data = turret_data,
+            need = need,
+            current = current_ammo
+          })
+          total_needs[turret_data.ammo_type] = (total_needs[turret_data.ammo_type] or 0) + need
+        end
+      end
+    end
+    
+    -- STEP 5: Only proceed if we have both supply and demand
+    local total_distributed = 0
+    
+    for ammo_type, total_needed in pairs(total_needs) do
+      local available = available_ammo[ammo_type] or 0
+      
+      if available > 0 and total_needed > 0 then
+        local to_distribute = math.min(available, total_needed)
+        
+        -- STEP 6: Remove ammo from chests (only what we'll actually distribute)
+        local removed_ammo = 0
+        for _, chest_data in pairs(valid_chests) do
+          if removed_ammo >= to_distribute then break end
+          
+          local inventory = chest_data.entity.get_inventory(defines.inventory.chest)
+          if inventory then
+            for i = 1, #inventory do
+              if removed_ammo >= to_distribute then break end
+              
+              local stack = inventory[i]
+              if stack.valid_for_read and stack.name == ammo_type then
+                local to_remove = math.min(stack.count, to_distribute - removed_ammo)
+                stack.count = stack.count - to_remove
+                removed_ammo = removed_ammo + to_remove
+                
+                if stack.count == 0 then
+                  stack.clear()
+                end
+              end
             end
           end
         end
-      else
-        storage.tde.master_ammo_chests[chest_id] = nil
-        log("Removed invalid Master Ammo Chest " .. chest_id)
+        
+        -- STEP 7: Distribute the removed ammo to turrets
+        local distributed_ammo = 0
+        for _, need_data in pairs(turret_needs) do
+          if distributed_ammo >= removed_ammo then break end
+          if need_data.turret_data.ammo_type ~= ammo_type then goto continue end
+          
+          local to_give = math.min(need_data.need, removed_ammo - distributed_ammo)
+          if to_give > 0 then
+            local inventory = need_data.turret_data.entity.get_inventory(defines.inventory.turret_ammo)
+            if inventory then
+              local inserted = inventory.insert({name = ammo_type, count = to_give})
+              distributed_ammo = distributed_ammo + inserted
+              total_distributed = total_distributed + inserted
+              
+              -- If we couldn't insert all, put remainder back in chests
+              local leftover = to_give - inserted
+              if leftover > 0 then
+                for _, chest_data in pairs(valid_chests) do
+                  if leftover <= 0 then break end
+                  local chest_inventory = chest_data.entity.get_inventory(defines.inventory.chest)
+                  if chest_inventory then
+                    local returned = chest_inventory.insert({name = ammo_type, count = leftover})
+                    leftover = leftover - returned
+                  end
+                end
+              end
+            end
+          end
+          
+          ::continue::
+        end
+        
+        -- STEP 8: Return any undistributed ammo to chests
+        local undistributed = removed_ammo - distributed_ammo
+        if undistributed > 0 then
+          for _, chest_data in pairs(valid_chests) do
+            if undistributed <= 0 then break end
+            local inventory = chest_data.entity.get_inventory(defines.inventory.chest)
+            if inventory then
+              local returned = inventory.insert({name = ammo_type, count = undistributed})
+              undistributed = undistributed - returned
+            end
+          end
+        end
+        
+        -- FIXED: Only show message if setting is enabled
+        if distributed_ammo > 0 and settings.global["tde-show-ammo-messages"].value then
+          game.print(string.format("Distributed %d %s to turrets", 
+            distributed_ammo, ammo_type), {r = 0, g = 0.8, b = 1})
+        end
       end
     end
     
-    -- Debug output every minute
+    -- Debug output every minute (reduced frequency)
     if game.tick % 3600 == 0 and (chest_count > 0 or valid_turret_count > 0) then
-      log(string.format("MAC System: %d chests, %d turrets registered", chest_count, valid_turret_count))
-      for ammo_name, count in pairs(total_ammo) do
-        log(string.format("  Collected %d %s", count, ammo_name))
-      end
-    end
-    
-    -- Distribuir munición (usar función original simplificada)
-    if next(total_ammo) then
-      distribute_ammo_to_turrets_simple(total_ammo)
+      log(string.format("MAC System: %d chests, %d turrets, distributed %d ammo this cycle", 
+        chest_count, valid_turret_count, total_distributed))
     end
 end
   
--- CORREGIDO: Función is_ammunition mejorada
+-- FIXED: Enhanced ammunition detection with more types
 function is_ammunition(item_name)
     if not item_name then return false end
     
-    -- Hardcoded ammunition types para evitar problemas con prototypes
+    -- Enhanced ammunition types list for better compatibility
     local ammo_types = {
       ["firearm-magazine"] = true,
       ["piercing-rounds-magazine"] = true,
@@ -150,110 +273,26 @@ function is_ammunition(item_name)
       ["rocket"] = true,
       ["explosive-rocket"] = true,
       ["atomic-bomb"] = true,
-      ["flamethrower-ammo"] = true
+      ["flamethrower-ammo"] = true,
+      -- Add Space Age ammo types if they exist
+      ["tesla-ammo"] = true, -- Example Space Age ammo
     }
     
     return ammo_types[item_name] or false
 end
-  
-function distribute_ammo_to_turrets_simple(total_ammo)
-    if not total_ammo or not next(total_ammo) then
-        return
-    end
 
-    -- First collect all valid turrets that need ammo
-    local turrets_needing_ammo = {}
-    for turret_id, turret_data in pairs(storage.tde.global_turrets) do
-        if turret_data.entity and turret_data.entity.valid and turret_data.ammo_type then
-            table.insert(turrets_needing_ammo, turret_data)
-        end
-    end
-
-    if #turrets_needing_ammo == 0 then
-        return
-    end
-
-    -- Distribute each ammo type
-    for ammo_name, total_count in pairs(total_ammo) do
-        local distributed_count = 0
-        local turrets_to_feed = {}
-
-        -- Find turrets that can use this ammo type
-        for _, turret_data in pairs(turrets_needing_ammo) do
-            if turret_data.ammo_type == ammo_name then
-                table.insert(turrets_to_feed, turret_data)
-            end
-        end
-
-        if #turrets_to_feed > 0 then
-            -- Calculate how much ammo each turret should get (minimum 1)
-            local ammo_per_turret = math.max(1, math.floor(total_count / #turrets_to_feed))
-            
-            -- First pass: distribute ammo_per_turret to each turret
-            for _, turret_data in pairs(turrets_to_feed) do
-                if distributed_count < total_count then
-                    local inventory = turret_data.entity.get_inventory(defines.inventory.turret_ammo)
-                    if inventory then
-                        local to_insert = math.min(ammo_per_turret, total_count - distributed_count)
-                        if to_insert > 0 then
-                            local inserted = inventory.insert({name = ammo_name, count = to_insert})
-                            distributed_count = distributed_count + inserted
-                        end
-                    end
-                end
-            end
-
-            -- Second pass: distribute any remaining ammo
-            local remaining_ammo = total_count - distributed_count
-            if remaining_ammo > 0 then
-                for _, turret_data in pairs(turrets_to_feed) do
-                    if remaining_ammo <= 0 then break end
-                    local inventory = turret_data.entity.get_inventory(defines.inventory.turret_ammo)
-                    if inventory then
-                        local inserted = inventory.insert({name = ammo_name, count = 1})
-                        remaining_ammo = remaining_ammo - inserted
-                        distributed_count = distributed_count + inserted
-                    end
-                end
-            end
-
-            -- Return any unused ammo to chests instead of losing it
-            local unused_ammo = total_count - distributed_count
-            if unused_ammo > 0 then
-                for chest_id, chest_data in pairs(storage.tde.master_ammo_chests) do
-                    if chest_data.entity and chest_data.entity.valid then
-                        local inventory = chest_data.entity.get_inventory(defines.inventory.chest)
-                        if inventory then
-                            local inserted = inventory.insert({name = ammo_name, count = unused_ammo})
-                            if inserted > 0 then
-                                unused_ammo = unused_ammo - inserted
-                                if unused_ammo <= 0 then break end
-                            end
-                        end
-                    end
-                end
-            end
-
-            -- Log the distribution result
-            if distributed_count > 0 then
-                game.print(string.format("Distributed %d %s to %d turrets", 
-                    distributed_count, ammo_name, #turrets_to_feed), {r = 0, g = 0.8, b = 1})
-            end
-        else
-            log("No compatible turrets found for " .. ammo_name .. " - this shouldn't happen")
-        end
-    end
-end
-
--- ARREGLADO: Sistema de balanceo de munición entre torretas - SIMPLIFICADO Y FUNCIONAL
+-- SIMPLIFIED: More balanced ammo redistribution system
 function balance_ammo_between_turrets()
     if not storage.tde or not storage.tde.global_turrets then
       return
     end
     
-    log("TDE: Starting ammo balancing...")
+    -- Only log if setting is enabled
+    if settings.global["tde-show-ammo-messages"].value then
+      log("TDE: Starting ammo balancing...")
+    end
     
-    -- Agrupar torretas por tipo de munición
+    -- Group turrets by ammo type
     local turret_groups = {}
     local total_turrets = 0
     
@@ -272,39 +311,38 @@ function balance_ammo_between_turrets()
       return
     end
     
-    log("TDE: Found " .. total_turrets .. " turrets to balance")
-    
-    -- Balancear cada grupo de torretas
+    -- Balance each group
     local total_redistributed = 0
     for ammo_type, turrets in pairs(turret_groups) do
-      if #turrets > 1 then -- Solo balancear si hay más de 1 torreta
-        local redistributed = balance_ammo_group_simple(turrets, ammo_type)
+      if #turrets > 1 then -- Only balance if there are multiple turrets
+        local redistributed = balance_ammo_group_improved(turrets, ammo_type)
         total_redistributed = total_redistributed + redistributed
       end
     end
     
-    if total_redistributed > 0 then
+    -- FIXED: Only show message if setting is enabled and something was redistributed
+    if total_redistributed > 0 and settings.global["tde-show-ammo-messages"].value then
       game.print(string.format("Rebalanced %d ammo among turrets", total_redistributed), {r = 0, g = 0.8, b = 1})
       log("TDE: Ammo balancing completed - redistributed " .. total_redistributed .. " ammo")
     end
 end
   
-  -- NUEVA: Función de balanceo SIMPLE que SÍ funciona
-function balance_ammo_group_simple(turrets, ammo_type)
+-- IMPROVED: Better balancing algorithm that prevents ammo loss
+function balance_ammo_group_improved(turrets, ammo_type)
     local turret_inventories = {}
     local total_ammo = 0
     
-    -- Paso 1: Recopilar información de todas las torretas
+    -- Step 1: Collect ammo information from all turrets
     for _, turret_data in pairs(turrets) do
       if turret_data.entity and turret_data.entity.valid then
         local inventory = turret_data.entity.get_inventory(defines.inventory.turret_ammo)
         if inventory then
           local ammo_count = 0
           
-          -- Contar munición total en esta torreta
+          -- Count ammo in this turret
           for i = 1, #inventory do
             local stack = inventory[i]
-            if stack.valid_for_read then
+            if stack.valid_for_read and stack.name == ammo_type then
               ammo_count = ammo_count + stack.count
             end
           end
@@ -320,10 +358,13 @@ function balance_ammo_group_simple(turrets, ammo_type)
     end
     
     if #turret_inventories < 2 or total_ammo == 0 then
-      return 0 -- No hay suficientes torretas o munición para balancear
+      return 0 -- Not enough turrets or ammo to balance
     end
     
-    -- Paso 2: Calcular si hay desequilibrio significativo
+    -- Step 2: Calculate target distribution (more conservative)
+    local target_per_turret = math.floor(total_ammo / #turret_inventories)
+    local max_difference_threshold = 30 -- Only balance if difference > 30
+    
     local max_ammo = 0
     local min_ammo = math.huge
     
@@ -332,39 +373,29 @@ function balance_ammo_group_simple(turrets, ammo_type)
       min_ammo = math.min(min_ammo, turret_inv.current_ammo)
     end
     
-    local difference = max_ammo - min_ammo
-    log("TDE: Ammo difference: " .. difference .. " (max: " .. max_ammo .. ", min: " .. min_ammo .. ")")
-    
-    -- Solo balancear si hay una diferencia significativa (más de 15 municiones)
-    if difference < 15 then
-      log("TDE: Difference too small, skipping balance")
+    -- Only balance if there's a significant imbalance
+    if (max_ammo - min_ammo) <= max_difference_threshold then
       return 0
     end
     
-    -- Paso 3: Redistribución simple - mover munición de torretas con más a torretas con menos
+    -- Step 3: Collect excess ammo from turrets with too much
+    local excess_ammo = {}
     local redistributed = 0
-    local target_ammo = math.floor(total_ammo / #turret_inventories)
-    
-    -- Recoger exceso de torretas que tienen más que el promedio + 5
-    local excess_ammo_items = {}
     
     for _, turret_inv in pairs(turret_inventories) do
-      if turret_inv.current_ammo > target_ammo + 5 then
-        local excess = turret_inv.current_ammo - target_ammo
+      if turret_inv.current_ammo > target_per_turret + 10 then -- Allow 10 ammo buffer
+        local excess = turret_inv.current_ammo - target_per_turret
         local removed = 0
         
-        -- Remover munición excedente
+        -- Remove excess ammo
         for i = 1, #turret_inv.inventory do
+          if removed >= excess then break end
+          
           local stack = turret_inv.inventory[i]
-          if stack.valid_for_read and removed < excess then
+          if stack.valid_for_read and stack.name == ammo_type then
             local to_remove = math.min(excess - removed, stack.count)
             
-            -- Guardar munición removida
-            table.insert(excess_ammo_items, {
-              name = stack.name,
-              count = to_remove
-            })
-            
+            table.insert(excess_ammo, {name = ammo_type, count = to_remove})
             stack.count = stack.count - to_remove
             removed = removed + to_remove
             redistributed = redistributed + to_remove
@@ -377,41 +408,42 @@ function balance_ammo_group_simple(turrets, ammo_type)
       end
     end
     
-    -- Distribuir munición excedente a torretas que tienen menos que el promedio - 5
+    -- Step 4: Distribute excess to turrets with too little
     for _, turret_inv in pairs(turret_inventories) do
-      if turret_inv.current_ammo < target_ammo - 5 and #excess_ammo_items > 0 then
-        local needed = target_ammo - turret_inv.current_ammo
+      if turret_inv.current_ammo < target_per_turret - 10 and #excess_ammo > 0 then -- Allow 10 ammo buffer
+        local needed = target_per_turret - turret_inv.current_ammo
         
-        -- Dar munición de la reserva de exceso
-        for i = #excess_ammo_items, 1, -1 do
-          local ammo_item = excess_ammo_items[i]
-          if needed > 0 and ammo_item.count > 0 then
-            local to_give = math.min(needed, ammo_item.count)
-            local inserted = turret_inv.inventory.insert({name = ammo_item.name, count = to_give})
-            
-            ammo_item.count = ammo_item.count - inserted
-            needed = needed - inserted
-            
-            if ammo_item.count == 0 then
-              table.remove(excess_ammo_items, i)
-            end
+        -- Give ammo from excess pool
+        for i = #excess_ammo, 1, -1 do
+          if needed <= 0 then break end
+          
+          local ammo_item = excess_ammo[i]
+          local to_give = math.min(needed, ammo_item.count)
+          local inserted = turret_inv.inventory.insert({name = ammo_item.name, count = to_give})
+          
+          ammo_item.count = ammo_item.count - inserted
+          needed = needed - inserted
+          
+          if ammo_item.count == 0 then
+            table.remove(excess_ammo, i)
           end
         end
       end
     end
     
-    log("TDE: Redistributed " .. redistributed .. " " .. ammo_type .. " ammo")
-    return redistributed
-end
-  
-function find_compatible_turrets(ammo_name, turret_groups)
-    local ammo_compatibility = {
-      ["firearm-magazine"] = "firearm-magazine",
-      ["piercing-rounds-magazine"] = "firearm-magazine",
-      ["uranium-rounds-magazine"] = "firearm-magazine"
-    }
+    -- Step 5: Return any leftover ammo to any available turret
+    for _, leftover_item in pairs(excess_ammo) do
+      if leftover_item.count > 0 then
+        for _, turret_inv in pairs(turret_inventories) do
+          if leftover_item.count <= 0 then break end
+          
+          local inserted = turret_inv.inventory.insert({name = leftover_item.name, count = leftover_item.count})
+          leftover_item.count = leftover_item.count - inserted
+        end
+      end
+    end
     
-    local compatible_type = ammo_compatibility[ammo_name]
-    return (compatible_type and turret_groups[compatible_type]) or {}
+    log("TDE: Redistributed " .. redistributed .. " " .. ammo_type .. " ammo among " .. #turret_inventories .. " turrets")
+    return redistributed
 end
 

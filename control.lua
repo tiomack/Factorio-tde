@@ -165,11 +165,11 @@ function create_attack_group(spawn_point, composition, is_boss, spawn_info, boss
     return
   end
   
-  -- MEJORADO: Pathfinding más agresivo hacia la base del jugador
+  -- CRITICAL FIX: Use Factorio 2.0 command system properly
   local player_base = find_player_base_center()
   
-  if player_base then
-    -- Comando más directo y agresivo
+  if player_base and unit_group.valid then
+    -- FIXED: Use the new 2.0 commandable system with proper validation
     unit_group.set_command({
       type = defines.command.compound,
       structure_type = defines.compound_command.return_last,
@@ -181,23 +181,26 @@ function create_attack_group(spawn_point, composition, is_boss, spawn_info, boss
           distraction = defines.distraction.by_anything
         },
         {
-          type = defines.command.attack,
-          target = find_base_heart(),
+          type = defines.command.attack_area, -- Changed from attack to attack_area for reliability
+          destination = player_base,
+          radius = 50,
           distraction = defines.distraction.by_anything
         }
       }
     })
   else
-    -- Fallback: ataque directo al spawn
-    unit_group.set_command({
-      type = defines.command.attack_area,
-      destination = {x = 0, y = 0},
-      radius = 150,
-      distraction = defines.distraction.by_enemy
-    })
+    -- Fallback: attack direct area
+    if unit_group.valid then
+      unit_group.set_command({
+        type = defines.command.attack_area,
+        destination = {x = 0, y = 0},
+        radius = 150,
+        distraction = defines.distraction.by_enemy
+      })
+    end
   end
   
-  -- CORREGIDO: Anunciar dirección solo una vez y con la información correcta
+  -- Announce direction only once with correct information
   if spawn_info and spawn_info.name and spawn_info.arrow then
     local boss_prefix = is_boss and "BOSS " or ""
     game.print(string.format("%s%s %s %s Attack incoming! (%d units)", 
@@ -565,10 +568,12 @@ script.on_nth_tick(60, function(event)
     end
   end
 end)
--- ===== MASTER AMMO CHEST SYSTEM - CORREGIDO =====
+-- ===== ENHANCED MASTER AMMO CHEST SYSTEM - FACTORIO 2.0 COMPATIBLE =====
+-- FIXED: Enhanced robot building event handlers for Factorio 2.0
 script.on_event(defines.events.on_built_entity, function(event)
   if settings.global["tde-master-chest-enabled"].value then
-    local entity = event.created_entity or event.entity
+    -- FIXED: Use the new event structure for 2.0
+    local entity = event.entity or event.created_entity
     if not entity or not entity.valid then return end
     
     if entity.name == "master-ammo-chest" then
@@ -579,22 +584,133 @@ script.on_event(defines.events.on_built_entity, function(event)
   end
 end)
 
+-- FIXED: Updated robot built entity event for Factorio 2.0 compatibility
 script.on_event(defines.events.on_robot_built_entity, function(event)
   if settings.global["tde-master-chest-enabled"].value then
-    local entity = event.created_entity
-    if not entity or not entity.valid then return end
+    -- CRITICAL FIX: Properly handle the robot built entity event
+    local entity = event.entity or event.created_entity
+    if not entity or not entity.valid then 
+      log("TDE: Invalid entity in on_robot_built_entity event")
+      return 
+    end
+    
+    log("TDE: Robot built entity: " .. (entity.name or "unknown") .. " at " .. entity.position.x .. "," .. entity.position.y)
     
     if entity.name == "master-ammo-chest" then
       register_master_ammo_chest(entity)
+      log("TDE: Master Ammo Chest registered via robot building")
     elseif is_turret(entity) then
       register_turret(entity)
+      log("TDE: Turret registered via robot building: " .. entity.name)
     end
   end
 end)
 
--- ===== NEST ACTIVATION SYSTEM =====
+-- ENHANCED: Add additional robot building events that might be relevant in 2.0
+script.on_event(defines.events.on_space_platform_built_entity, function(event)
+  if settings.global["tde-master-chest-enabled"].value then
+    local entity = event.entity or event.created_entity
+    if not entity or not entity.valid then return end
+    
+    log("TDE: Space platform built entity: " .. (entity.name or "unknown"))
+    
+    if entity.name == "master-ammo-chest" then
+      register_master_ammo_chest(entity)
+      log("TDE: Master Ammo Chest registered via space platform building")
+    elseif is_turret(entity) then
+      register_turret(entity)
+      log("TDE: Turret registered via space platform building: " .. entity.name)
+    end
+  end
+end)
+
+-- ENHANCED: Add ghost revived event (when robots revive ghosts)
+script.on_event(defines.events.on_pre_ghost_deconstructed, function(event)
+  if settings.global["tde-master-chest-enabled"].value then
+    local ghost = event.ghost
+    if not ghost or not ghost.valid then return end
+    
+    -- If it's being revived (not deconstructed), we'll get the built event
+    if ghost.name == "entity-ghost" then
+      local ghost_name = ghost.ghost_name
+      if ghost_name == "master-ammo-chest" or is_turret_name(ghost_name) then
+        log("TDE: Ghost being revived: " .. ghost_name)
+      end
+    end
+  end
+end)
+
+-- Helper function to check if an entity name corresponds to a turret
+function is_turret_name(entity_name)
+  if not entity_name then return false end
+  
+  -- Check common turret names
+  local turret_names = {
+    ["gun-turret"] = true,
+    ["laser-turret"] = true,
+    ["flamethrower-turret"] = true,
+    ["artillery-turret"] = true,
+  }
+  
+  return turret_names[entity_name] or false
+end
+
+-- ENHANCED: Alternative approach using entity cloned event (for upgraded entities)
+script.on_event(defines.events.on_entity_cloned, function(event)
+  if settings.global["tde-master-chest-enabled"].value then
+    local entity = event.destination
+    if not entity or not entity.valid then return end
+    
+    if entity.name == "master-ammo-chest" then
+      register_master_ammo_chest(entity)
+      log("TDE: Master Ammo Chest registered via entity cloning")
+    elseif is_turret(entity) then
+      register_turret(entity)
+      log("TDE: Turret registered via entity cloning: " .. entity.name)
+    end
+  end
+end)
+
+-- DEBUGGING: Add comprehensive entity tracking for troubleshooting
+script.on_event(defines.events.script_raised_built, function(event)
+  if settings.global["tde-master-chest-enabled"].value and settings.global["tde-show-ammo-messages"].value then
+    local entity = event.entity
+    if not entity or not entity.valid then return end
+    
+    if entity.name == "master-ammo-chest" then
+      register_master_ammo_chest(entity)
+      log("TDE: Master Ammo Chest registered via script_raised_built")
+    elseif is_turret(entity) then
+      register_turret(entity)
+      log("TDE: Turret registered via script_raised_built: " .. entity.name)
+    end
+  end
+end)
+
+script.on_event(defines.events.script_raised_revive, function(event)
+  if settings.global["tde-master-chest-enabled"].value and settings.global["tde-show-ammo-messages"].value then
+    local entity = event.entity
+    if not entity or not entity.valid then return end
+    
+    if entity.name == "master-ammo-chest" then
+      register_master_ammo_chest(entity)
+      log("TDE: Master Ammo Chest registered via script_raised_revive")
+    elseif is_turret(entity) then
+      register_turret(entity)
+      log("TDE: Turret registered via script_raised_revive: " .. entity.name)
+    end
+  end
+end)
+
+-- ===== ENHANCED NEST ACTIVATION SYSTEM =====
+-- FIXED: Update entity damaged event handler to validate targets properly
 script.on_event(defines.events.on_entity_damaged, function(event)
   if not event.entity or not event.entity.valid then return end
+  
+  -- FIXED: Validate the entity has health before processing
+  if not event.entity.health or event.entity.health <= 0 then 
+    return  -- Skip entities without health or with 0 health
+  end
   
   if event.entity.name == "biter-spawner" or event.entity.name == "spitter-spawner" then
     local spawner_id = event.entity.unit_number
@@ -602,7 +718,13 @@ script.on_event(defines.events.on_entity_damaged, function(event)
       local nest_data = storage.tde.nest_territories[spawner_id]
       
       if nest_data and nest_data.is_defensive then
-        activate_defensive_nest(nest_data, event.cause)
+        -- CRITICAL FIX: Validate the cause (attacker) before passing to activate_defensive_nest
+        local valid_attacker = nil
+        if event.cause and event.cause.valid and event.cause.health and event.cause.health > 0 then
+          valid_attacker = event.cause
+        end
+        
+        activate_defensive_nest(nest_data, valid_attacker)
       end
     end
   end

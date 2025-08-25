@@ -52,6 +52,16 @@ data:extend({
     default_value = true,
     order = "f-kill-messages"
   },
+  -- NEW: Setting to control ammo system messages
+  {
+    type = "bool-setting",
+    name = "tde-show-ammo-messages",
+    setting_type = "runtime-global",
+    default_value = false, -- Default to false to reduce spam
+    order = "f2-ammo-messages",
+    localised_name = {"mod-setting-name.tde-show-ammo-messages"},
+    localised_description = {"mod-setting-description.tde-show-ammo-messages"}
+  },
   
   -- ===== DYNAMIC RESEARCH COST SETTINGS =====
   {
