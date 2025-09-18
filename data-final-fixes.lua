@@ -534,7 +534,7 @@ if not data.raw["container"]["master-ammo-chest"] then
   log("TDE: Created Master Ammo Chest entity and item")
 end
 
--- ===== ENHANCED AMMUNITION PROGRESSION =====
+-- ===== ENHANCED AMMUNITION PROGRESSION - FIXED FOR FACTORIO 2.0 =====
 -- Add new ammunition types for better progression
 data:extend({
   {
@@ -542,8 +542,8 @@ data:extend({
     name = "tde-enhanced-magazine",
     icon = "__base__/graphics/icons/piercing-rounds-magazine.png",
     icon_size = 64,
+    ammo_category = "bullet", -- FIXED: Added root-level ammo_category for Factorio 2.0
     ammo_type = {
-      category = "bullet",
       action = {
         type = "direct",
         action_delivery = {
@@ -573,8 +573,8 @@ data:extend({
     name = "tde-armor-piercing-rounds",
     icon = "__base__/graphics/icons/uranium-rounds-magazine.png",
     icon_size = 64,
+    ammo_category = "bullet", -- FIXED: Added root-level ammo_category for Factorio 2.0
     ammo_type = {
-      category = "bullet",
       action = {
         type = "direct",
         action_delivery = {
@@ -633,13 +633,13 @@ data:extend({
   }
 })
 
--- Add technologies for new ammunition
+-- Add technologies for new ammunition - FIXED ICONS FOR FACTORIO 2.0
 data:extend({
   {
     type = "technology",
     name = "tde-enhanced-ammunition",
-    icon = "__base__/graphics/technology/military.png",
-    icon_size = 256,
+    icon = "__base__/graphics/icons/piercing-rounds-magazine.png",
+    icon_size = 64,
     effects = {
       {
         type = "unlock-recipe",
@@ -659,8 +659,8 @@ data:extend({
   {
     type = "technology",
     name = "tde-armor-piercing",
-    icon = "__base__/graphics/technology/military-2.png",
-    icon_size = 256,
+    icon = "__base__/graphics/icons/uranium-rounds-magazine.png",
+    icon_size = 64,
     effects = {
       {
         type = "unlock-recipe",
@@ -684,3 +684,4 @@ log("TDE: Science system refactored to use only Dead Biter research tokens.")
 log("TDE: Base Heart entity created as large 2x2 container with biter nest appearance and light blue tint.")
 log("TDE: All systems updated for Factorio 2.0 compatibility.")
 log("TDE: DYNAMIC RESEARCH COSTS with CATEGORIES implemented - costs scale based on research count and technology category!")
+log("TDE: FIXED ammunition prototype structure for Factorio 2.0 - added ammo_category field!")

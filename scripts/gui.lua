@@ -70,7 +70,7 @@ end
     frame.research_count_label.caption = "Research: " .. tostring(storage.tde.research_count or 0)
 end
 
--- Add function to handle GUI button clicks
+-- Add function to handle GUI button clicks - FIXED FOR FACTORIO 2.0
 function handle_tde_gui_click(event)
     if not event.element or not event.element.valid then
         return
@@ -91,8 +91,8 @@ function handle_tde_gui_click(event)
             player.gui.top.add{
                 type = "button",
                 name = "tde_reopen_button",
-                caption = "TDE Status",
-                style = "blue_button"
+                caption = "TDE Status"
+                -- FIXED: Removed invalid blue_button style for Factorio 2.0
             }
         end
     elseif event.element.name == "tde_reopen_button" then
@@ -102,15 +102,14 @@ function handle_tde_gui_click(event)
     end
 end
 
--- Add function to create the reopen button for players who close the GUI
+-- Add function to create the reopen button for players who close the GUI - FIXED FOR FACTORIO 2.0
 function ensure_tde_gui_available(player)
     if not player.gui.left.tde_info_frame and not player.gui.top.tde_reopen_button then
         player.gui.top.add{
             type = "button",
             name = "tde_reopen_button",
-            caption = "TDE Status",
-            style = "blue_button"
+            caption = "TDE Status"
+            -- FIXED: Removed invalid blue_button style for Factorio 2.0
         }
     end
 end
-  
