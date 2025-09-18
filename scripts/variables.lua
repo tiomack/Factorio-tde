@@ -6,3 +6,12 @@ MAX_DISTANCE_HP = 50000 -- Max distance for HP scaling
 BASE_HEART_MAX_HP = 100000 -- Base Heart maximum HP
 BASE_HEART_REGEN_RATE = 50 -- HP regenerated per minute
 DEFAULT_BOSS_EVERY = 10
+
+-- UTILITY: Table size function for compatibility
+function table_size(t)
+  local count = 0
+  if t then
+    for _ in pairs(t) do count = count + 1 end
+  end
+  return count
+end

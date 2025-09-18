@@ -10,8 +10,12 @@ require("scripts.base")
 require("scripts.research")
 require("scripts.enemy")
 require("scripts.mac")
+local mac_v2 = require("scripts.mac_v2")
 require("scripts.gen")
 require("scripts.ammo_turrets")
+
+-- ENHANCED: Load enemy scaling module
+local enemy_scaling = require("scripts.enemy_scaling")
 
 require("scripts.wave")
 
@@ -29,10 +33,10 @@ function show_welcome_messages(player)
     player.print("• Kill biters to earn research tokens", {r = 1, g = 1, b = 1})
     player.print("• Tokens are stored in your Base Heart", {r = 0, g = 1, b = 0})
     player.print("• Technologies have different costs by category:", {r = 0, g = 0.8, b = 1})
-    player.print("  ⚔️ Combat techs: 2x cost (military, damage, turrets)", {r = 1, g = 0.5, b = 0})
-    player.print("  🏭 Production techs: 1.5x cost (assembling, oil, science)", {r = 1, g = 0.8, b = 0})
-    player.print("  🛠️ Utility techs: 0.5x cost (toolbelt, landfill, gates, lights)", {r = 0, g = 1, b = 0})
-    player.print("  📋 Standard techs: 1x cost (everything else)", {r = 1, g = 1, b = 1})
+    player.print("   Combat techs: 2x cost (military, damage, turrets)", {r = 1, g = 0.5, b = 0})
+    player.print("   Production techs: 1.5x cost (assembling, oil, science)", {r = 1, g = 0.8, b = 0})
+    player.print("   Utility techs: 0.5x cost (toolbelt, landfill, gates, lights)", {r = 0, g = 1, b = 0})
+    player.print("   Standard techs: 1x cost (everything else)", {r = 1, g = 1, b = 1})
     
     local config = get_research_settings()
     player.print(string.format("• Base costs scale: Start at %d, then +%d until %d", 
@@ -93,55 +97,22 @@ function create_attack_group(spawn_point, composition, is_boss, spawn_info, boss
         if success and unit and unit.valid then
           units_created = units_created + 1
           
-          -- Apply boss modifications
+          -- Apply enemy scaling based on type
+          local wave_number = storage.tde.wave_count or 1
+          local evolution = get_enemy_evolution()
+          
           if is_boss and boss_kill_value then
-            -- Calculate boss HP scaling based on wave number and enemy tier - ENHANCED SCALING
-            local base_hp = unit.health
-            local wave_number = storage.tde.wave_count or 1
-            local boss_wave_number = math.floor(wave_number / storage.tde.BOSS_EVERY) -- Which boss wave this is
+            -- Apply boss HP scaling using the enemy scaling module
+            local final_hp = enemy_scaling.apply_boss_hp_scaling(unit, wave_number, true, boss_kill_value)
             
-            -- Get enemy tier for HP scaling
-            local enemy_tier = 1
-            if space_age and space_age.get_enemy_tier then
-                enemy_tier = space_age.get_enemy_tier(unit.name) or 1
-            end
+            -- FIXED: Reduce boss HP to 10x normal scaling instead of extreme values
+            local normal_hp = enemy_scaling.calculate_enemy_hp_scaling(unit.name, wave_number, evolution)
+            local boss_hp = normal_hp * 10 -- 10x normal enemy HP
+            unit.health = boss_hp
             
-            -- Check if this is a Space Age boss (Demolisher, etc.)
-            local is_space_age_boss = false
-            if space_age and space_age.is_space_age_available() then
-                local boss_enemy, planet_data = space_age.get_boss_enemy_type()
-                if unit.name == boss_enemy and planet_data then
-                    is_space_age_boss = true
-                end
-            end
-            
-            if is_space_age_boss then
-                -- Space Age bosses use tier-based scaling instead of vanilla HP
-                local tier_multiplier = 1 + (enemy_tier - 1) * 0.5 -- Each tier adds 50% base HP
-                local boss_hp_multiplier = 1
-                if boss_wave_number > 0 then
-                    -- Progressive scaling with tier consideration
-                    local progression = 1000 + (boss_wave_number - 1) * 1500 + (boss_wave_number - 1) * (boss_wave_number - 1) * 250
-                    boss_hp_multiplier = (progression * tier_multiplier) / base_hp
-                end
-                
-                unit.health = base_hp * boss_hp_multiplier
-                
-                log("TDE: Created Space Age boss with " .. math.floor(unit.health) .. " HP (wave " .. wave_number .. ", tier " .. enemy_tier .. ")")
-            else
-                -- Vanilla bosses use progressive scaling formula with tier consideration
-                -- Formula: 1000 + (boss_wave_number - 1) * 1500 + (boss_wave_number - 1) * (boss_wave_number - 1) * 250
-                -- This gives: Wave 10: 1000, Wave 20: 2500, Wave 30: 4000, Wave 40: 5750, Wave 50: 8000
-                local tier_multiplier = 1 + (enemy_tier - 1) * 0.3 -- Each tier adds 30% base HP for vanilla bosses
-                local boss_hp_multiplier = 1
-                if boss_wave_number > 0 then
-                    local progression = 1000 + (boss_wave_number - 1) * 1500 + (boss_wave_number - 1) * (boss_wave_number - 1) * 250
-                    boss_hp_multiplier = (progression * tier_multiplier) / base_hp
-                end
-                
-                unit.health = base_hp * boss_hp_multiplier
-                
-                log("TDE: Created vanilla boss with " .. math.floor(unit.health) .. " HP (wave " .. wave_number .. ", boss #" .. boss_wave_number .. ", tier " .. enemy_tier .. ")")
+            -- Apply slow movement to bosses
+            if unit.prototype and unit.prototype.walking_speed then
+                unit.walking_speed = unit.prototype.walking_speed * 0.5 -- 50% slower movement
             end
             
             -- Store boss kill value
@@ -152,6 +123,14 @@ function create_attack_group(spawn_point, composition, is_boss, spawn_info, boss
                 kill_value = boss_kill_value
               }
             end
+            
+            log(string.format("TDE: Created boss %s with %.0f HP (10x normal, slower movement) - wave %d", 
+              unit.name, boss_hp, wave_number))
+          else
+            -- Apply regular enemy HP scaling
+            local final_hp = enemy_scaling.apply_enemy_hp_scaling(unit, wave_number, evolution)
+            log(string.format("TDE: Created %s with %.0f HP (scaled) - wave %d", 
+              unit.name, final_hp, wave_number))
           end
           
           unit_group.add_member(unit)
@@ -295,6 +274,9 @@ script.on_init(function()
   log("TDE: on_init called - NEW GAME")
   initialize_tde_global()
   
+  -- Initialize new MAC system
+  mac_v2.init_mac_system()
+  
   -- Create base heart immediately
   create_base_heart()
   
@@ -326,6 +308,9 @@ end)
 script.on_configuration_changed(function(event)
   log("TDE: on_configuration_changed called - LOADING EXISTING SAVE")
   
+  -- Initialize new MAC system
+  mac_v2.init_mac_system()
+  
   -- Solo verificar estructura sin resetear datos
   if not storage or not storage.tde then
     log("TDE: Missing global structure in existing save - initializing")
@@ -342,6 +327,36 @@ script.on_configuration_changed(function(event)
     if not storage.tde.active_waves then storage.tde.active_waves = {} end
     if not storage.tde.master_ammo_chests then storage.tde.master_ammo_chests = {} end
     if not storage.tde.global_turrets then storage.tde.global_turrets = {} end
+    if not storage.tde.turret_networks then storage.tde.turret_networks = {} end
+    
+    -- MIGRATION: Update old turret data format to new format
+    local migrated_turrets = 0
+    for turret_id, turret_data in pairs(storage.tde.global_turrets) do
+      if turret_data.ammo_type and not turret_data.ammo_types then
+        -- Old format detected - migrate to new format
+        if turret_data.entity and turret_data.entity.valid then
+          local updated_ammo_types = nil
+          if get_turret_ammo_type then
+            updated_ammo_types = get_turret_ammo_type(turret_data.entity)
+          end
+          
+          if updated_ammo_types then
+            turret_data.ammo_types = updated_ammo_types
+          else
+            turret_data.ammo_types = {turret_data.ammo_type}
+          end
+        else
+          turret_data.ammo_types = {turret_data.ammo_type}
+        end
+        turret_data.ammo_type = nil -- Remove old field
+        migrated_turrets = migrated_turrets + 1
+      end
+    end
+    
+    if migrated_turrets > 0 then
+      log("TDE: Migrated " .. migrated_turrets .. " turrets to new ammo format")
+      game.print("Migrated " .. migrated_turrets .. " turrets to new ammunition system", {r = 0, g = 1, b = 1})
+    end
     if not storage.tde.infinite_resources then storage.tde.infinite_resources = {} end
     if not storage.tde.nest_territories then storage.tde.nest_territories = {} end
     if storage.tde.world_setup_complete == nil then storage.tde.world_setup_complete = false end
@@ -353,9 +368,9 @@ script.on_configuration_changed(function(event)
     end
   end
   
-  -- CRÍTICO: Marcar que necesita reconstruir MAC, pero no hacerlo ahora
+  -- CRITICAL: Mark MAC system for reconstruction with enhanced delay
   storage.tde.mac_needs_reconstruction = true
-  log("TDE: Marked MAC system for reconstruction on next game tick")
+  log("TDE: Marked Global MAC system for reconstruction on next game tick")
   
   -- Try to find existing base heart
   find_base_heart()
@@ -426,11 +441,8 @@ script.on_event(defines.events.on_entity_died, function(event)
   
   if settings.global["tde-master-chest-enabled"].value then
     -- Handle Master Ammo Chest system
-    if entity.name == "master-ammo-chest" then
-      unregister_master_ammo_chest(entity)
-    elseif is_turret(entity) then
-      unregister_turret(entity)
-    end
+    -- Handle Master Ammo Chest system v2.0
+    mac_v2.on_entity_destroyed(entity)
   end
   
   -- Handle Base Heart destruction
@@ -498,10 +510,10 @@ script.on_nth_tick(60, function(event)
   
   -- CRÍTICO: Reconstruir MAC system si está marcado para reconstrucción (PRIORITARIO)
   if storage.tde.mac_needs_reconstruction then
-    log("TDE: Executing automatic MAC reconstruction...")
-    reconstruct_mac_system_robust()
+    log("TDE: Executing automatic MAC v2.0 reconstruction...")
+    mac_v2.rebuild_mac_system()
     storage.tde.mac_needs_reconstruction = false
-    log("TDE: MAC reconstruction completed")
+    log("TDE: MAC v2.0 reconstruction completed")
     
     -- Mostrar mensaje al jugador
     game.print("MAC system automatically rebuilt!", {r = 0, g = 1, b = 0})
@@ -541,12 +553,8 @@ script.on_nth_tick(60, function(event)
   check_wave_schedule()
   manage_active_waves()
   if settings.global["tde-master-chest-enabled"].value then
-    process_ammo_distribution()
-  
-    -- Balancear munición entre torretas cada 30 segundos
-    if game.tick % 1800 == 0 then
-      balance_ammo_between_turrets()
-    end
+    -- Use new MAC system v2.0
+    mac_v2.update_mac_system()
   end
   
   -- Expand nest field every 10 minutes (reduced frequency to prevent crashes)
@@ -586,11 +594,8 @@ script.on_event(defines.events.on_built_entity, function(event)
     local entity = event.entity or event.created_entity
     if not entity or not entity.valid then return end
     
-    if entity.name == "master-ammo-chest" then
-      register_master_ammo_chest(entity)
-    elseif is_turret(entity) then
-      register_turret(entity)
-    end
+    -- Use new MAC system v2.0
+    mac_v2.on_entity_built(entity)
   end
 end)
 
@@ -606,13 +611,8 @@ script.on_event(defines.events.on_robot_built_entity, function(event)
     
     log("TDE: Robot built entity: " .. (entity.name or "unknown") .. " at " .. entity.position.x .. "," .. entity.position.y)
     
-    if entity.name == "master-ammo-chest" then
-      register_master_ammo_chest(entity)
-      log("TDE: Master Ammo Chest registered via robot building")
-    elseif is_turret(entity) then
-      register_turret(entity)
-      log("TDE: Turret registered via robot building: " .. entity.name)
-    end
+    -- Use new MAC system v2.0
+    mac_v2.on_entity_built(entity)
   end
 end)
 
@@ -624,13 +624,9 @@ script.on_event(defines.events.on_space_platform_built_entity, function(event)
     
     log("TDE: Space platform built entity: " .. (entity.name or "unknown"))
     
-    if entity.name == "master-ammo-chest" then
-      register_master_ammo_chest(entity)
-      log("TDE: Master Ammo Chest registered via space platform building")
-    elseif is_turret(entity) then
-      register_turret(entity)
-      log("TDE: Turret registered via space platform building: " .. entity.name)
-    end
+    -- Use new MAC system v2.0
+    mac_v2.on_entity_built(entity)
+    log("TDE: Entity registered via space platform building: " .. entity.name)
   end
 end)
 
@@ -671,13 +667,9 @@ script.on_event(defines.events.on_entity_cloned, function(event)
     local entity = event.destination
     if not entity or not entity.valid then return end
     
-    if entity.name == "master-ammo-chest" then
-      register_master_ammo_chest(entity)
-      log("TDE: Master Ammo Chest registered via entity cloning")
-    elseif is_turret(entity) then
-      register_turret(entity)
-      log("TDE: Turret registered via entity cloning: " .. entity.name)
-    end
+    -- Use new MAC system v2.0
+    mac_v2.on_entity_built(entity)
+    log("TDE: Entity registered via entity cloning: " .. entity.name)
   end
 end)
 
@@ -687,13 +679,9 @@ script.on_event(defines.events.script_raised_built, function(event)
     local entity = event.entity
     if not entity or not entity.valid then return end
     
-    if entity.name == "master-ammo-chest" then
-      register_master_ammo_chest(entity)
-      log("TDE: Master Ammo Chest registered via script_raised_built")
-    elseif is_turret(entity) then
-      register_turret(entity)
-      log("TDE: Turret registered via script_raised_built: " .. entity.name)
-    end
+    -- Use new MAC system v2.0
+    mac_v2.on_entity_built(entity)
+    log("TDE: Entity registered via script_raised_built: " .. entity.name)
   end
 end)
 
@@ -702,13 +690,9 @@ script.on_event(defines.events.script_raised_revive, function(event)
     local entity = event.entity
     if not entity or not entity.valid then return end
     
-    if entity.name == "master-ammo-chest" then
-      register_master_ammo_chest(entity)
-      log("TDE: Master Ammo Chest registered via script_raised_revive")
-    elseif is_turret(entity) then
-      register_turret(entity)
-      log("TDE: Turret registered via script_raised_revive: " .. entity.name)
-    end
+    -- Use new MAC system v2.0
+    mac_v2.on_entity_built(entity)
+    log("TDE: Entity registered via script_raised_revive: " .. entity.name)
   end
 end)
 
@@ -840,6 +824,18 @@ end
 -- ===== NEW: PERIODIC MULTIPLAYER SYNC =====
 script.on_nth_tick(1800, function(event) -- Every 30 seconds (reduced from 5 seconds)
   multiplayer.sync_game_state_to_all_players()
+end)
+
+-- ===== MAC SYSTEM ON_TICK EVENT =====
+script.on_event(defines.events.on_tick, function(event)
+  -- Handle MAC system updates
+  mac_v2.update_mac_system()
+  
+  -- Handle MAC system reconstruction if needed
+  if storage.tde and storage.tde.mac_needs_reconstruction then
+    mac_v2.rebuild_mac_system()
+    storage.tde.mac_needs_reconstruction = false
+  end
 end)
 
 log("TDE: Multiplayer and Space Age DLC integration loaded successfully!")

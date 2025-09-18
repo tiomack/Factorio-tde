@@ -1,4 +1,6 @@
 -- ===== DEBUG COMMANDS =====
+local mac_v2 = require("scripts.mac_v2")
+
 commands.add_command("tde-add-tokens", "Add research tokens for testing (number)", function(command)
     local amount = tonumber(command.parameter) or 100
     add_tokens_to_base_heart(amount)
@@ -9,6 +11,22 @@ commands.add_command("tde-wave", "Spawn test wave", function(command)
     spawn_wave()
 end)
   
+commands.add_command("tde-rebuild-mac", "Rebuild Master Ammo Chest system v2.0", function(command)
+    mac_v2.rebuild_mac_system()
+    local stats = mac_v2.get_mac_stats()
+    game.print(string.format("MAC System v2.0 rebuilt - %d turrets, %d chests tracked", 
+        stats.turrets_tracked or 0, stats.chests_tracked or 0), {r = 0, g = 1, b = 0})
+end)
+
+commands.add_command("tde-mac-stats", "Show MAC system statistics", function(command)
+    local stats = mac_v2.get_mac_stats()
+    game.print("=== MAC SYSTEM v2.0 STATISTICS ===", {r = 0, g = 1, b = 1})
+    game.print(string.format("Turrets tracked: %d", stats.turrets_tracked or 0))
+    game.print(string.format("Chests tracked: %d", stats.chests_tracked or 0))
+    game.print(string.format("Items distributed: %d", stats.items_distributed or 0))
+    game.print(string.format("Last distribution: tick %d", stats.last_distribution_tick or 0))
+end)
+
 commands.add_command("tde-status", "Show current status", function(command)
     local next_wave_seconds = math.floor((storage.tde.next_wave_tick - game.tick) / 60)
     local next_wave_minutes = math.floor(next_wave_seconds / 60)
