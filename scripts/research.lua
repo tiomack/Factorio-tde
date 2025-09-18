@@ -78,10 +78,83 @@ function increment_research_count()
     check_cost_bracket_notification(old_cost, new_cost)
 end
 
+-- ===== TECHNOLOGY CATEGORIZATION SYSTEM =====
+function get_tech_category(tech_name)
+    -- Define technology categories with different cost multipliers
+    local categories = {
+        -- Combat/Defense technologies - higher cost (more valuable)
+        combat = {
+            "military", "military-2", "military-3", "military-4",
+            "gun-turret", "laser-turrets", "flamethrower-turrets",
+            "physical-projectile-damage-1", "physical-projectile-damage-2", "physical-projectile-damage-3", "physical-projectile-damage-4", "physical-projectile-damage-5", "physical-projectile-damage-6", "physical-projectile-damage-7",
+            "weapon-shooting-speed-1", "weapon-shooting-speed-2", "weapon-shooting-speed-3", "weapon-shooting-speed-4", "weapon-shooting-speed-5", "weapon-shooting-speed-6",
+            "laser-turret-speed-1", "laser-turret-speed-2", "laser-turret-speed-3", "laser-turret-speed-4", "laser-turret-speed-5", "laser-turret-speed-6", "laser-turret-speed-7",
+            "laser-turret-damage-1", "laser-turret-damage-2", "laser-turret-damage-3", "laser-turret-damage-4", "laser-turret-damage-5", "laser-turret-damage-6", "laser-turret-damage-7",
+            "flamethrower-damage-1", "flamethrower-damage-2", "flamethrower-damage-3", "flamethrower-damage-4", "flamethrower-damage-5", "flamethrower-damage-6", "flamethrower-damage-7",
+            "artillery", "artillery-shell-range-1", "artillery-shell-speed-1", "artillery-shell-damage-1", "artillery-shell-damage-2", "artillery-shell-damage-3", "artillery-shell-damage-4", "artillery-shell-damage-5", "artillery-shell-damage-6",
+            "energy-weapons-damage-1", "energy-weapons-damage-2", "energy-weapons-damage-3", "energy-weapons-damage-4", "energy-weapons-damage-5", "energy-weapons-damage-6", "energy-weapons-damage-7",
+            "stronger-explosives-1", "stronger-explosives-2", "stronger-explosives-3", "stronger-explosives-4", "stronger-explosives-5", "stronger-explosives-6", "stronger-explosives-7",
+            "tde-enhanced-ammunition", "tde-armor-piercing"
+        },
+        -- Utility technologies - lower cost (less impactful on combat)
+        utility = {
+            "automation", "electronics", "logistics", "logistics-2", "logistics-3",
+            "automated-construction", "construction-robotics", "logistic-robotics", "logistic-system",
+            "solar-energy", "solar-panel-equipment", "personal-solar-panel-equipment",
+            "night-vision-equipment", "personal-roboport-equipment", "personal-roboport-mk2-equipment",
+            "toolbelt", "toolbelt-2", "toolbelt-3", "toolbelt-4", "toolbelt-5", "toolbelt-6", "toolbelt-7", "toolbelt-8", "toolbelt-9", "toolbelt-10",
+            "landfill", "landfill-2", "landfill-3", "landfill-4", "landfill-5", "landfill-6", "landfill-7", "landfill-8", "landfill-9", "landfill-10",
+            "gates", "gates-2", "gates-3", "gates-4", "gates-5", "gates-6", "gates-7", "gates-8", "gates-9", "gates-10",
+            "light", "light-2", "light-3", "light-4", "light-5", "light-6", "light-7", "light-8", "light-9", "light-10",
+            "inserter-capacity-bonus-1", "inserter-capacity-bonus-2", "inserter-capacity-bonus-3", "inserter-capacity-bonus-4", "inserter-capacity-bonus-5", "inserter-capacity-bonus-6", "inserter-capacity-bonus-7",
+            "mining-productivity-1", "mining-productivity-2", "mining-productivity-3", "mining-productivity-4", "mining-productivity-5", "mining-productivity-6", "mining-productivity-7",
+            "worker-robots-speed-1", "worker-robots-speed-2", "worker-robots-speed-3", "worker-robots-speed-4", "worker-robots-speed-5", "worker-robots-speed-6", "worker-robots-speed-7",
+            "worker-robots-storage-1", "worker-robots-storage-2", "worker-robots-storage-3", "worker-robots-storage-4", "worker-robots-storage-5", "worker-robots-storage-6", "worker-robots-storage-7",
+            "character-logistic-slots-1", "character-logistic-slots-2", "character-logistic-slots-3", "character-logistic-slots-4", "character-logistic-slots-5", "character-logistic-slots-6", "character-logistic-slots-7",
+            "character-logistic-trash-slots-1", "character-logistic-trash-slots-2", "character-logistic-trash-slots-3", "character-logistic-trash-slots-4", "character-logistic-trash-slots-5", "character-logistic-trash-slots-6", "character-logistic-trash-slots-7"
+        },
+        -- Production technologies - medium cost
+        production = {
+            "steel-processing", "advanced-material-processing", "advanced-material-processing-2",
+            "concrete", "concrete-2", "concrete-3", "concrete-4", "concrete-5", "concrete-6", "concrete-7", "concrete-8", "concrete-9", "concrete-10",
+            "advanced-electronics", "advanced-electronics-2", "advanced-electronics-3", "advanced-electronics-4", "advanced-electronics-5", "advanced-electronics-6", "advanced-electronics-7", "advanced-electronics-8", "advanced-electronics-9", "advanced-electronics-10",
+            "production-science-pack", "utility-science-pack", "space-science-pack",
+            "assembling-machine-1", "assembling-machine-2", "assembling-machine-3",
+            "oil-processing", "advanced-oil-processing", "coal-liquefaction",
+            "plastics", "sulfur-processing", "battery", "explosives", "flying", "rocket-silo", "rocket-control-unit", "low-density-structure", "rocket-fuel", "rocket-part", "space-science-pack"
+        }
+    }
+    
+    -- Check each category
+    for category, techs in pairs(categories) do
+        for _, tech in pairs(techs) do
+            if tech == tech_name then
+                return category
+            end
+        end
+    end
+    
+    -- Default category for unknown technologies
+    return "standard"
+end
+
+function get_tech_cost_multiplier(category)
+    local multipliers = {
+        combat = 2.0,      -- Combat techs cost 2x more (harder to get)
+        production = 1.5,  -- Production techs cost 1.5x more
+        utility = 0.5,     -- Utility techs cost 0.5x less (easier to get)
+        standard = 1.0     -- Standard cost for unknown techs
+    }
+    return multipliers[category] or 1.0
+end
+
 -- ===== TECHNOLOGY UNLOCK SYSTEM =====
 function get_tech_kill_cost(tech)
-    -- Use dynamic cost system instead of static costs
-    return get_next_research_cost()
+    -- Use dynamic cost system with category-based multipliers
+    local base_cost = get_next_research_cost()
+    local category = get_tech_category(tech.name)
+    local multiplier = get_tech_cost_multiplier(category)
+    return math.floor(base_cost * multiplier)
 end
   
 function unlock_technology_with_dynamic_cost(tech_name)
@@ -110,7 +183,7 @@ function unlock_technology_with_dynamic_cost(tech_name)
       end
     end
   
-    local total_cost = get_next_research_cost()
+    local total_cost = get_tech_kill_cost(tech)  -- Use categorized cost
     local current_progress = game.forces.player.research_progress
     local remaining_fraction = 1 - current_progress
     local required_tokens = math.ceil(total_cost * remaining_fraction)
@@ -132,7 +205,9 @@ function unlock_technology_with_dynamic_cost(tech_name)
       end
       tech.researched = true
       increment_research_count()
-      return true, string.format("Technology unlocked: %s (Cost: %d tokens)", tech_name, total_cost)
+      local category = get_tech_category(tech_name)
+      local category_emoji = category == "combat" and "⚔️" or category == "utility" and "🛠️" or category == "production" and "🏭" or "📋"
+      return true, string.format("Technology unlocked: %s %s (Cost: %d tokens, Category: %s)", category_emoji, tech_name, total_cost, category)
     else
       return false, string.format("Partial progress: Used %d tokens (%.0f%%)", tokens_to_use, new_progress * 100)
     end

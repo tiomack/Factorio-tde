@@ -274,6 +274,9 @@ function is_ammunition(item_name)
       ["explosive-rocket"] = true,
       ["atomic-bomb"] = true,
       ["flamethrower-ammo"] = true,
+      -- TDE Enhanced ammunition types
+      ["tde-enhanced-magazine"] = true,
+      ["tde-armor-piercing-rounds"] = true,
       -- Add Space Age ammo types if they exist
       ["tesla-ammo"] = true, -- Example Space Age ammo
     }

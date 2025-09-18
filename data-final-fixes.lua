@@ -26,13 +26,13 @@ data:extend({
 
 for tech_name, tech in pairs(data.raw.technology) do
   if tech then
-    -- All technologies start with a base cost of 10 (will be dynamically calculated)
+    -- All technologies start with a base cost of 10 (will be dynamically calculated with categories)
     local base_cost = 10
 
-    -- Use the fake kill token as the only ingredient (must be type "tool")
+    -- Use the dead biter token as the only ingredient (must be type "tool")
     tech.unit = {
       count = base_cost,
-      ingredients = {{"tde-kill-token", 1}},
+      ingredients = {{"tde-dead-biter", 1}},
       time = 1
     }
     
@@ -41,26 +41,26 @@ for tech_name, tech in pairs(data.raw.technology) do
       tech.enabled = true
     end
     
-    -- Agregar descripción del costo dinámico
+    -- Agregar descripción del costo dinámico con categorías
     if not tech.localised_description then
-      tech.localised_description = {"", "Cost: Dynamic (starts at 10, scales with research count)"}
+      tech.localised_description = {"", "Cost: Dynamic (starts at 10, scales with research count and category)"}
     end
     
     log("TDE: Modified technology " .. tech_name .. " - uses dynamic cost system")
   end
 end
 
--- Make all labs require only the kill token as input
+-- Make all labs require only the dead biter token as input
 for _, lab in pairs(data.raw["lab"]) do
-  lab.inputs = {"tde-kill-token"}
+  lab.inputs = {"tde-dead-biter"}
 end
 
--- Ensure all technologies require only the kill token and have a unit field
+-- Ensure all technologies require only the dead biter token and have a unit field
 for _, tech in pairs(data.raw.technology) do
   if not tech.unit then
-    tech.unit = {count = 1, ingredients = { {"tde-kill-token", 1} }, time = 1}
+    tech.unit = {count = 1, ingredients = { {"tde-dead-biter", 1} }, time = 1}
   else
-    tech.unit.ingredients = { {"tde-kill-token", 1} }
+    tech.unit.ingredients = { {"tde-dead-biter", 1} }
     if not tech.unit.count then tech.unit.count = 1 end
     if not tech.unit.time then tech.unit.time = 1 end
   end
@@ -389,28 +389,28 @@ if data.raw["accumulator"] and data.raw["accumulator"]["accumulator"] then
   log("TDE: Enhanced accumulator capacity")
 end
 
--- Add tde-kill-token to all labs' inputs so every tech is researchable
+-- Add tde-dead-biter to all labs' inputs so every tech is researchable
 for _, lab in pairs(data.raw["lab"]) do
   if lab.inputs then
     local found = false
     for _, input in ipairs(lab.inputs) do
-      if input == "tde-kill-token" then
+      if input == "tde-dead-biter" then
         found = true
         break
       end
     end
     if not found then
-      table.insert(lab.inputs, "tde-kill-token")
+      table.insert(lab.inputs, "tde-dead-biter")
     end
   end
 end
 
--- FINAL PATCH: Ensure every technology has a .unit table with count, time, and kill token ingredient
+-- FINAL PATCH: Ensure every technology has a .unit table with count, time, and dead biter token ingredient
 for _, tech in pairs(data.raw.technology) do
   if not tech.unit or type(tech.unit) ~= "table" then
-    tech.unit = {count = 1, ingredients = { {"tde-kill-token", 1} }, time = 1}
+    tech.unit = {count = 1, ingredients = { {"tde-dead-biter", 1} }, time = 1}
   else
-    tech.unit.ingredients = { {"tde-kill-token", 1} }
+    tech.unit.ingredients = { {"tde-dead-biter", 1} }
     if not tech.unit.count then tech.unit.count = 1 end
     if not tech.unit.time then tech.unit.time = 1 end
   end
@@ -534,7 +534,153 @@ if not data.raw["container"]["master-ammo-chest"] then
   log("TDE: Created Master Ammo Chest entity and item")
 end
 
+-- ===== ENHANCED AMMUNITION PROGRESSION =====
+-- Add new ammunition types for better progression
+data:extend({
+  {
+    type = "ammo",
+    name = "tde-enhanced-magazine",
+    icon = "__base__/graphics/icons/piercing-rounds-magazine.png",
+    icon_size = 64,
+    ammo_type = {
+      category = "bullet",
+      action = {
+        type = "direct",
+        action_delivery = {
+          type = "instant",
+          target_effects = {
+            {
+              type = "damage",
+              damage = {amount = 12, type = "physical"} -- Enhanced damage
+            },
+            {
+              type = "create-explosion",
+              entity_name = "explosion-gunshot"
+            }
+          }
+        }
+      }
+    },
+    magazine_size = 10,
+    subgroup = "ammo",
+    order = "a[basic-clips]-c[enhanced-magazine]",
+    stack_size = 200,
+    localised_name = {"item-name.tde-enhanced-magazine", "Enhanced Magazine"},
+    localised_description = {"item-description.tde-enhanced-magazine", "High-damage ammunition for gun turrets. More effective than regular magazines."}
+  },
+  {
+    type = "ammo",
+    name = "tde-armor-piercing-rounds",
+    icon = "__base__/graphics/icons/uranium-rounds-magazine.png",
+    icon_size = 64,
+    ammo_type = {
+      category = "bullet",
+      action = {
+        type = "direct",
+        action_delivery = {
+          type = "instant",
+          target_effects = {
+            {
+              type = "damage",
+              damage = {amount = 20, type = "physical"} -- Very high damage
+            },
+            {
+              type = "create-explosion",
+              entity_name = "explosion-gunshot"
+            }
+          }
+        }
+      }
+    },
+    magazine_size = 10,
+    subgroup = "ammo",
+    order = "a[basic-clips]-d[armor-piercing]",
+    stack_size = 200,
+    localised_name = {"item-name.tde-armor-piercing-rounds", "Armor-Piercing Rounds"},
+    localised_description = {"item-description.tde-armor-piercing-rounds", "Devastating ammunition that can pierce through the toughest enemy armor."}
+  }
+})
+
+-- Add recipes for new ammunition
+data:extend({
+  {
+    type = "recipe",
+    name = "tde-enhanced-magazine",
+    ingredients = {
+      {type = "item", name = "firearm-magazine", amount = 2},
+      {type = "item", name = "iron-plate", amount = 1},
+      {type = "item", name = "copper-plate", amount = 1}
+    },
+    results = {{type = "item", name = "tde-enhanced-magazine", amount = 4}},
+    energy_required = 3,
+    enabled = false,
+    localised_name = {"recipe-name.tde-enhanced-magazine", "Enhanced Magazine"},
+    localised_description = {"recipe-description.tde-enhanced-magazine", "Craft enhanced ammunition from basic magazines and metal plates."}
+  },
+  {
+    type = "recipe",
+    name = "tde-armor-piercing-rounds",
+    ingredients = {
+      {type = "item", name = "piercing-rounds-magazine", amount = 2},
+      {type = "item", name = "steel-plate", amount = 2},
+      {type = "item", name = "copper-plate", amount = 2}
+    },
+    results = {{type = "item", name = "tde-armor-piercing-rounds", amount = 3}},
+    energy_required = 5,
+    enabled = false,
+    localised_name = {"recipe-name.tde-armor-piercing-rounds", "Armor-Piercing Rounds"},
+    localised_description = {"recipe-description.tde-armor-piercing-rounds", "Craft devastating armor-piercing ammunition from piercing rounds and steel."}
+  }
+})
+
+-- Add technologies for new ammunition
+data:extend({
+  {
+    type = "technology",
+    name = "tde-enhanced-ammunition",
+    icon = "__base__/graphics/technology/military.png",
+    icon_size = 256,
+    effects = {
+      {
+        type = "unlock-recipe",
+        recipe = "tde-enhanced-magazine"
+      }
+    },
+    prerequisites = {"military", "steel-processing"},
+    unit = {
+      count = 50,
+      ingredients = {{"tde-dead-biter", 1}},
+      time = 15
+    },
+    order = "e-a-a",
+    localised_name = {"technology-name.tde-enhanced-ammunition", "Enhanced Ammunition"},
+    localised_description = {"technology-description.tde-enhanced-ammunition", "Unlock enhanced magazines with improved damage."}
+  },
+  {
+    type = "technology",
+    name = "tde-armor-piercing",
+    icon = "__base__/graphics/technology/military-2.png",
+    icon_size = 256,
+    effects = {
+      {
+        type = "unlock-recipe",
+        recipe = "tde-armor-piercing-rounds"
+      }
+    },
+    prerequisites = {"tde-enhanced-ammunition", "military-2"},
+    unit = {
+      count = 100,
+      ingredients = {{"tde-dead-biter", 1}},
+      time = 30
+    },
+    order = "e-a-b",
+    localised_name = {"technology-name.tde-armor-piercing", "Armor-Piercing Rounds"},
+    localised_description = {"technology-description.tde-armor-piercing", "Unlock devastating armor-piercing ammunition."}
+  }
+})
+
+log("TDE: Enhanced ammunition progression system added!")
 log("TDE: Science system refactored to use only Dead Biter research tokens.")
 log("TDE: Base Heart entity created as large 2x2 container with biter nest appearance and light blue tint.")
 log("TDE: All systems updated for Factorio 2.0 compatibility.")
-log("TDE: DYNAMIC RESEARCH COSTS implemented - costs scale based on research count!")
+log("TDE: DYNAMIC RESEARCH COSTS with CATEGORIES implemented - costs scale based on research count and technology category!")

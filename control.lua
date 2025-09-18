@@ -28,9 +28,14 @@ function show_welcome_messages(player)
     player.print("This is a tower defense conversion mod!", {r = 1, g = 1, b = 0})
     player.print("• Kill biters to earn research tokens", {r = 1, g = 1, b = 1})
     player.print("• Tokens are stored in your Base Heart", {r = 0, g = 1, b = 0})
+    player.print("• Technologies have different costs by category:", {r = 0, g = 0.8, b = 1})
+    player.print("  ⚔️ Combat techs: 2x cost (military, damage, turrets)", {r = 1, g = 0.5, b = 0})
+    player.print("  🏭 Production techs: 1.5x cost (assembling, oil, science)", {r = 1, g = 0.8, b = 0})
+    player.print("  🛠️ Utility techs: 0.5x cost (toolbelt, landfill, gates, lights)", {r = 0, g = 1, b = 0})
+    player.print("  📋 Standard techs: 1x cost (everything else)", {r = 1, g = 1, b = 1})
     
     local config = get_research_settings()
-    player.print(string.format("• Research costs scale dynamically: Start at %d, then +%d until %d", 
+    player.print(string.format("• Base costs scale: Start at %d, then +%d until %d", 
       config.base_cost, config.increment_1, config.threshold_1), {r = 0, g = 0.8, b = 1})
     player.print(string.format("• Then +%d until %d, +%d until %d, +%d after %d!", 
       config.increment_2, config.threshold_2, config.increment_3, config.threshold_3, config.increment_final, config.threshold_3), {r = 0, g = 0.8, b = 1})
@@ -443,6 +448,11 @@ script.on_event(defines.events.on_player_created, function(event)
   if player then
     create_tde_info_gui(player)
   end
+end)
+
+-- Add GUI click handler
+script.on_event(defines.events.on_gui_click, function(event)
+  handle_tde_gui_click(event)
 end)
 
 -- ARREGLADO: Main game loop - RECONSTRUCCIÓN MAC AUTOMÁTICA Y ROBUSTA + MONITOREO
